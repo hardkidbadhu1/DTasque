@@ -1,10 +1,8 @@
-use std::error::Error;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
-use crate::interface::ResultsTraits;
+use crate::interface::{DynError, ResultsTraits};
 use crate::server::{Server};
-use rmp_serde::{to_vec};
 
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,7 +22,7 @@ pub struct JobOpts {
     pub timeout: Option<Duration>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Meta {
     pub id: String,
     pub on_success_ids: Vec<String>,
@@ -68,26 +66,27 @@ impl Job {
     }
 }
 
+#[derive(Clone)]
 pub struct JobCtx {
-    pub store: Arc<dyn ResultsTraits>,
+    pub store: Arc<dyn ResultsTraits + Send + Sync>,
     pub meta: Meta,
 }
 
 impl JobCtx {
-    pub async fn save(&self, b: &[u8]) -> Result<(),Arc<dyn Error>> {
+    pub async fn save(&self, b: &[u8]) -> Result<(), DynError> {
         self.store.set(&self.meta.id, b).await
     }
 }
 
 impl Server {
-    pub async fn enqueue(&self, job: Job) -> Result<String, Box<dyn Error>> {
+    pub async fn enqueue(&self, job: Job) -> Result<String, DynError> {
         let meta = Meta::default_meta(&job.opts);
         self.enqueue_with_meta(job, meta).await
     }
 }
 
 impl Server {
-    async fn enqueue_with_meta(&self, job: Job, meta: Meta) -> Result<String, Box<dyn Error>> {
+    async fn enqueue_with_meta(&self, job: Job, meta: Meta) -> Result<String, DynError> {
         let mut msg = job.message(meta);
 
         // Set job status in the results backend
@@ -101,7 +100,7 @@ impl Server {
 }
 
 impl Server {
-    async fn enqueue_message(&self, msg: &JobMessage) -> Result<(), Box<dyn Error>> {
+    async fn enqueue_message(&self, msg: &JobMessage) -> Result<(), DynError> {
         let serialized_msg = rmp_serde::to_vec(msg)?;
         self.broker.enqueue(&msg.meta.queue, &serialized_msg).await?;
         Ok(())
@@ -112,7 +111,7 @@ impl Server {
 const JOB_PREFIX: &str = "job:msg:";
 
 impl Server {
-    pub(crate) async fn set_job_message(&self, msg: &JobMessage) -> Result<(), Box<dyn Error>> {
+    pub(crate) async fn set_job_message(&self, msg: &JobMessage) -> Result<(), DynError> {
         let key = format!("{}{}", JOB_PREFIX, msg.meta.id);
         let serialized_msg = rmp_serde::to_vec(msg)?;
         self.results.set(&key, &serialized_msg).await?;
@@ -121,7 +120,7 @@ impl Server {
 }
 
 impl Server {
-    pub async fn get_job(&self, id: &str) -> Result<JobMessage, Box<dyn Error>> {
+    pub async fn get_job(&self, id: &str) -> Result<JobMessage, DynError> {
         let key = format!("{}{}", JOB_PREFIX, id);
         let data = self.results.get(&key).await?;
         let msg: JobMessage = rmp_serde::from_slice(&data)?;

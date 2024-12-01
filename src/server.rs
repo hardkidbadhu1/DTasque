@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use crate::jobs::{JobMessage, JobCtx};
 use std::future::Future;
 use std::pin::Pin;
-use crate::interface::{BrokerTraits, ResultsTraits};
+use crate::interface::{BrokerTraits, DynError, ResultsTraits};
 use rmp_serde::{from_slice, to_vec};
 
 // Constants
@@ -16,7 +16,6 @@ pub const STATUS_FAILED: &str = "failed";
 pub const STATUS_DONE: &str = "successful";
 pub const STATUS_RETRYING: &str = "retrying";
 pub const TRACER: &str = "tasqueue";
-const JOB_PREFIX: &str = "job:msg:";
 
 // Server struct
 pub struct Server {
@@ -28,8 +27,8 @@ pub struct Server {
 }
 
 pub struct ServerOpts {
-    pub broker: Arc<dyn BrokerTraits + Send + Sync>,
-    pub results: Arc<dyn ResultsTraits + Send + Sync>,
+    pub(crate) broker: Arc<dyn BrokerTraits + Send + Sync>,
+    pub(crate) results: Arc<dyn ResultsTraits + Send + Sync>,
 }
 
 type HandlerResult = Result<(), Box<dyn Error + Send + Sync>>;
@@ -75,7 +74,7 @@ impl Server {
         name: String,
         handler: Handler,
         mut opts: TaskOpts,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if opts.queue.is_empty() {
             opts.queue = "default".to_string();
         }
@@ -183,10 +182,10 @@ impl Server {
         }
     }
 
-    async fn exec_job(&self, mut msg: JobMessage, task: &Task) -> Result<(), Box<dyn Error>> {
+    async fn exec_job(&self, mut msg: JobMessage, task: &Task) -> Result<(), DynError> {
         let task_ctx = JobCtx {
             store: self.results.clone(),
-            meta: msg.meta,
+            meta: msg.meta.clone(),
         };
 
         // Execute the handler
@@ -228,21 +227,21 @@ impl Server {
         Ok(())
     }
 
-    async fn status_processing(&self, msg: &mut JobMessage) -> Result<(), Box<dyn Error>> {
+    async fn status_processing(&self, msg: &mut JobMessage) -> Result<(), DynError> {
         msg.meta.processed_at = Some(SystemTime::now());
         msg.meta.status = STATUS_PROCESSING.to_string();
 
         self.set_job_message(msg).await
     }
 
-    pub(crate) async fn status_started(&self, msg: &mut JobMessage) -> Result<(), Box<dyn Error>> {
+    pub(crate) async fn status_started(&self, msg: &mut JobMessage) -> Result<(), DynError> {
         msg.meta.processed_at = Some(SystemTime::now());
         msg.meta.status = STATUS_STARTED.to_string();
 
         self.set_job_message(msg).await
     }
 
-    async fn status_done(&self, msg: &mut JobMessage) -> Result<(), Box<dyn Error>> {
+    async fn status_done(&self, msg: &mut JobMessage) -> Result<(), DynError> {
         msg.meta.processed_at = Some(SystemTime::now());
         msg.meta.status = STATUS_DONE.to_string();
 
@@ -250,7 +249,7 @@ impl Server {
         self.set_job_message(msg).await
     }
 
-    async fn status_failed(&self, msg: &mut JobMessage) -> Result<(), Box<dyn Error>> {
+    async fn status_failed(&self, msg: &mut JobMessage) -> Result<(), DynError> {
         msg.meta.processed_at = Some(SystemTime::now());
         msg.meta.status = STATUS_FAILED.to_string();
 
@@ -258,26 +257,21 @@ impl Server {
         self.set_job_message(msg).await
     }
 
-    async fn status_retrying(&self, msg: &mut JobMessage) -> Result<(), Box<dyn Error>> {
+    async fn status_retrying(&self, msg: &mut JobMessage) -> Result<(), DynError> {
         msg.meta.processed_at = Some(SystemTime::now());
         msg.meta.status = STATUS_RETRYING.to_string();
         self.set_job_message(msg).await
     }
 
-    async fn retry_job(&self, msg: &mut JobMessage) -> Result<(), Box<dyn Error>> {
+    async fn retry_job(&self, msg: &mut JobMessage) -> Result<(), DynError> {
         self.status_retrying(msg).await?;
         let serialized_msg = to_vec(msg)?;
         self.broker.enqueue(&msg.meta.queue, &serialized_msg).await?;
         Ok(())
     }
 
-    async fn set_job_message(&self, msg: &JobMessage) -> Result<(), Box<dyn Error>> {
-        let key = format!("{}{}", JOB_PREFIX, msg.meta.id);
-        let serialized_msg = to_vec(msg)?;
-        self.results.set(&key, &serialized_msg).await?;
-        Ok(())
-    }
 
-    // Additional methods like get_tasks, get_result, get_pending, etc.
-    // ...
+    pub(crate) async fn get_success(&self) -> Result<Vec<String>, DynError> {
+        self.results.get_success().await
+        }
 }

@@ -1,12 +1,8 @@
-use std::error::Error;
-use std::sync::Arc;
 use redis::{AsyncCommands, Client};use std::time::Duration;
 use tokio::time;
 use async_trait::async_trait;
-use futures::SinkExt;
-use tokio::sync::mpsc::{Receiver, Sender, UnboundedSender};
-use tokio::sync::Mutex;
-use crate::interface::BrokerTraits;
+use tokio::sync::mpsc::{Sender};
+use crate::interface::{BrokerTraits,DynError};
 
 pub struct Options {
     pub addrs: Vec<String>,
@@ -43,8 +39,20 @@ pub struct Broker {
 
 impl Broker {
     pub async fn new(opts: Options) -> Self {
-        let connection_string = opts.addrs[0].clone(); // Assuming a single address for simplicity.
-        let client = Client::open(connection_string).expect("Invalid Redis URL");
+        let addr = opts.addrs[0].clone(); // Assuming a single address for simplicity.
+        let mut url = String::new();
+
+        if let Some(ref pwd) = opts.password {
+            url = format!("redis://:{}@{}/", pwd, addr);
+        } else {
+            url = format!("redis://{}/", addr);
+        }
+
+        if opts.db != 0 {
+            url = format!("{}{}/", url.trim_end_matches('/'), opts.db);
+        }
+
+        let client = Client::open(url.clone()).expect(&format!("Invalid Redis URL: {}", url));
 
         Broker { opts, client }
     }
@@ -52,16 +60,9 @@ impl Broker {
 
 #[async_trait]
 impl BrokerTraits for Broker {
-    async fn enqueue(&self, queue: &str, message: &[u8]) -> Result<(),Arc<dyn Error>> {
-        let mut conn = match self.client.get_multiplexed_async_connection().await {
-            Ok(conn) => conn,
-            Err(e) => return Err(Arc::new(e)),
-        };
-
-        match conn.lpush::<_, _, i64>(queue, message).await {
-            Ok(_) => Ok(()),
-            Err(e) => Err(Arc::new(e)),
-        }
+    async fn enqueue(&self, queue: &str, message: &[u8]) -> Result<(), DynError> {
+        let mut conn = self.client.get_multiplexed_async_connection().await.map_err(|e| Box::new(e) as DynError)?;
+        conn.lpush::<_, _, i64>(queue, message).await.map(|_| ()).map_err(|e| Box::new(e) as DynError)
     }
 
     async fn consume(&self, queue: String, sender: Sender<Vec<u8>>) {
@@ -84,12 +85,10 @@ impl BrokerTraits for Broker {
                 .await
             {
                 Ok(Ok((_, message))) => {
-                    let mut sender_guard = sender.lock().await;
-                    if sender_guard.send(message).is_err() {
+                    if sender.send(message).await.is_err() {
                         eprintln!("Work sender dropped; shutting down consumer.");
                         break;
                     }
-                    // Sender guard is dropped here when it goes out of scope
                 }
                 Ok(Err(e)) => {
                     eprintln!("Error while consuming messages: {:?}", e);
@@ -101,15 +100,15 @@ impl BrokerTraits for Broker {
         }
     }
 
-    async fn get_pending(&self, queue: &str) -> Result<Vec<String>, Arc<dyn Error>> {
+    async fn get_pending(&self, queue: &str) -> Result<Vec<String>, DynError> {
         let mut conn = match self.client.get_multiplexed_async_connection().await {
             Ok(conn) => conn,
-            Err(e) => return Err(Arc::new(e)),
+            Err(e) => return Err(Box::new(e) as DynError),
         };
 
         match conn.lrange(queue, 0, -1).await {
             Ok(pending) => Ok(pending),
-            Err(e) => Err(Arc::new(e)),
+            Err(e) => Err(Box::new(e) as DynError),
         }
     }
 }

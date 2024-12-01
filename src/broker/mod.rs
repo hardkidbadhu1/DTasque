@@ -1,4 +1,4 @@
-pub mod broker; // Exposes the `broker.rs` file as a submodule
+pub mod broker;
 
 // Re-export the main components for external use
 pub use broker::{Broker, Options};
