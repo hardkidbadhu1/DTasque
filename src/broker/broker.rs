@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc::{Sender};
 use crate::interface::{BrokerTraits,DynError};
 
+
 pub struct Options {
     pub addrs: Vec<String>,
     pub password: Option<String>,
@@ -75,31 +76,31 @@ impl BrokerTraits for Broker {
         };
 
         loop {
-            match time::timeout(
-                self.opts.poll_period,
-                conn.blpop::<_, (String, Vec<u8>)>(
-                    queue.clone(),
-                    self.opts.poll_period.as_secs_f64(),
-                ),
-            )
-                .await
-            {
-                Ok(Ok((_, message))) => {
-                    if sender.send(message).await.is_err() {
+            println!("receiving from consumer..");
+
+            // Perform BLPOP with the specified poll period
+            let res: Result<Option<(String, Vec<u8>)>, redis::RedisError> =
+                conn.blpop(&queue, self.opts.poll_period.as_secs_f64()).await;
+
+            match res {
+                Ok(Some((_key, msg))) => {
+                    // Successfully received a message
+                    if sender.send(msg).await.is_err() {
                         eprintln!("Work sender dropped; shutting down consumer.");
                         break;
                     }
                 }
-                Ok(Err(e)) => {
-                    eprintln!("Error while consuming messages: {:?}", e);
+                Ok(None) => {
+                    // No tasks to consume (BLPOP timed out without data)
+                    println!("no tasks to consume.. queue: {}", queue);
                 }
-                Err(_) => {
-                    eprintln!("Timeout; continue polling.");
+                Err(e) => {
+                    // An error occurred while consuming from the Redis queue
+                    eprintln!("error consuming from redis queue: {:?}", e);
                 }
             }
         }
     }
-
     async fn get_pending(&self, queue: &str) -> Result<Vec<String>, DynError> {
         let mut conn = match self.client.get_multiplexed_async_connection().await {
             Ok(conn) => conn,
