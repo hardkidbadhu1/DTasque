@@ -271,7 +271,7 @@ impl Server {
     }
 
 
-    pub(crate) async fn get_success(&self) -> Result<Vec<String>, DynError> {
+    pub async fn get_success(&self) -> Result<Vec<String>, DynError> {
         self.results.get_success().await
         }
 }

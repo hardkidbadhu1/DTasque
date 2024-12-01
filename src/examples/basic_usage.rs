@@ -1,16 +1,7 @@
-pub mod interface;
-pub mod jobs;
-pub mod server;
-pub mod broker;
-pub mod results;
-pub mod tasks;
-
-
-use broker::{Broker, Options as BrokerOptions};
-use jobs::{Job, JobOpts, JobCtx};
-use results::{Results, Options as ResultsOptions};
-use server::{Server, TaskOpts};
-use tasks::tasks::{sum_processor, SumPayload};
+use taskqueue::{Server, ServerOpts, TaskOpts, Job, JobOpts};
+use taskqueue::broker::{Broker, Options as BrokerOptions};
+use taskqueue::results::{Results, Options as ResultsOptions};
+use taskqueue::tasks::tasks::{sum_processor, SumPayload};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Register the "add" task
     server.register_task(
         "add".to_string(),
-        Arc::new(move |payload: Vec<u8>, ctx: JobCtx| {
+        Arc::new(move |payload: Vec<u8>, ctx: taskqueue::JobCtx| {
             Box::pin(async move {
                 sum_processor(&ctx, &payload).await
             })

@@ -3,6 +3,15 @@ name = "taskqueue"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "taskqueue"
+path = "src/lib.rs"
+
+[[bin]]
+name = "taskqueue-bin"
+path = "src/examples/basic_usage.rs"
+
+
 [dependencies]
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
