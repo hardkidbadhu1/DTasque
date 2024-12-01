@@ -1,6 +1,49 @@
 [package]
-name = "DTasque"
+name = "taskqueue"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Redis integration
+redis = { version = "0.27.5", features = ["tokio-comp"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rmp-serde = "1.3.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# UUID generation
+uuid = { version = "1", features = ["v4"] }
+
+# Task coordination and utilities
+futures = "0.3"
+
+# Task-based serialization
+async-trait = "0.1"
+num_cpus = "1.16.0"
+
+[dev-dependencies]
+# For writing unit tests
+tokio-test = "0.4"
+
+[workspace]
+# Optional: Include this if planning a multi-crate workspace
+members = [
+    ".",
+]
+
+#crossbeam channel
+crossbeam = "0.8"
+
+#opentelemetry
+opentelemetry = "0.22"
+opentelemetry_sdk = "0.22"
+opentelemetry-stdout = { version = "0.3", features = ["trace"] }
+
