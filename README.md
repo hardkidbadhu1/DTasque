@@ -1,7 +1,5 @@
 # TaskQueue - A Simple Asynchronous Task Queue Library for Rust
 
-[![Crates.io](https://img.shields.io/crates/v/taskqueue.svg)](https://crates.io/crates/taskqueue)
-
 TaskQueue is a simple, asynchronous task queue library for Rust, designed to handle background jobs and processing tasks using Redis as a broker and result store. It provides a straightforward API to define tasks, enqueue jobs, and process them asynchronously with concurrency support.
 
 ## Table of Contents
@@ -39,9 +37,8 @@ Ensure that you have Redis installed and running. You can download Redis from re
 ## Getting Started
 
 ### Prerequisites
-
-	•	Rust: Ensure you have Rust installed. You can download it from rust-lang.org.
-	•	Redis: Install and run a Redis server instance.
+Rust: Ensure you have Rust installed. You can download it from rust-lang.org.
+Redis: Install and run a Redis server instance.
 
 ### Setting Up the Server
 
